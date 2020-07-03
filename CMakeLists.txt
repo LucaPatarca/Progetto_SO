@@ -3,4 +3,4 @@ project(Progetto_SO C)
 
 set(CMAKE_C_STANDARD 11)
 
-add_executable(Progetto_SO main.c fdistance.h fdistance.c feditseq.h feditseq.c)
+add_executable(Progetto_SO main.c fdistance.h fdistance.c feditseq.h feditseq.c filestruct.h filestruct.c)
