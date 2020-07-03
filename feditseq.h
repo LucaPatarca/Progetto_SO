@@ -6,18 +6,26 @@
 #define PROGETTO_SO_FEDITSEQ_H
 
 #include <bits/types/FILE.h>
+#include <zconf.h>
 
-typedef struct mrow {
-    int *buff;
-    int size;
-    int off;
-} mrow_t;
+typedef struct hblock{
+    uint size;
+    struct hblock *next;
+    char *buff;
+} hblock_t;
 
-typedef struct dmatrix {
-    mrow_t **M;
-    unsigned int cols;
-    unsigned int rows;
-}dmatrix_t;
+typedef struct vblock{
+    uint size;
+    char *buff;
+} vblock_t;
+
+typedef struct tblock{
+    uint xsize;
+    uint ysize;
+    struct tblock *up;
+    struct tblock *left;
+    uint **M;
+} tblock_t;
 
 void savesequence(FILE *file1, FILE *file2, FILE *out);
 void applysequence(FILE *file, FILE *seq);
