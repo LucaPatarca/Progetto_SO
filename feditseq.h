@@ -15,8 +15,8 @@ typedef struct row{
 
 typedef struct seqtable{
     row_t *cur;
-    uint posx;
-    uint posy;
+    long posx;
+    long posy;
     char up;
     char left;
     row_t *last;

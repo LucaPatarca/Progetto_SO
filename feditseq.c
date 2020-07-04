@@ -5,6 +5,7 @@
 #include "filestruct.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #define ADD 1
 #define DEL 2
@@ -108,42 +109,12 @@ void completetable(){
     table->last=table->cur;
 }
 
-unsigned char* create_add(){
+unsigned char* add_seq_chunk(const char* type, uint pos, char c){
     unsigned char *buf = malloc(8);
-    buf[0]='A';
-    buf[1]='D';
-    buf[2]='D';
-    buf[3]=table->posx>>24;
-    buf[4]=table->posx>>16;
-    buf[5]=table->posx>>8;
-    buf[6]=table->posx;
-    buf[7]=table->up;
-
-    return buf;
-}
-
-u_char * create_del(){
-    __u_char *buf=malloc(7);
-    buf[0]='D';
-    buf[1]='E';
-    buf[2]='L';
-    buf[3]=table->posy>>24;
-    buf[4]=table->posy>>16;
-    buf[5]=table->posy>>8;
-    buf[6]=table->posy;
-    return buf;
-}
-
-__u_char * create_set(){
-    unsigned char *buf = malloc(8);
-    buf[0]='S';
-    buf[1]='E';
-    buf[2]='T';
-    buf[3]=table->posy>>24;
-    buf[4]=table->posy>>16;
-    buf[5]=table->posy>>8;
-    buf[6]=table->posy;
-    buf[7]=table->up;
+    strcpy((char *)buf,type);
+    for(u_char i=0;i<4;i++)
+        buf[i+3]= (pos>>(3-i)*8u) & 0xffu;
+    buf[7]=c;
     return buf;
 }
 
@@ -166,7 +137,6 @@ int choose_next(){
 void move_up(){
     table->cur=table->cur->upper;
     table->posy--;
-    table->left=prev(file_from);
 }
 
 void move_left(){
@@ -176,12 +146,10 @@ void move_left(){
 
 void move_end(){
     end(file_to);
-    end(file_from);
     table->cur=table->last;
     table->posx= file_to->size - 1;
     table->posy= file_from->size - 1;
     table->up=prev(file_to);
-    table->left=prev(file_from);
 }
 
 __u_char ** createsequence(){
@@ -189,19 +157,19 @@ __u_char ** createsequence(){
     __u_char **sequence=malloc(sizeof(char*)*distance);
     move_end();
     int seq_pos=0;
-    while(table->up!=EOF&&table->left!=EOF){
+    while(table->posy>-1||table->posx>-1){
         int result = choose_next();
         switch (result){
             case DEL:
-                sequence[seq_pos++]=create_del();
+                sequence[seq_pos++]=add_seq_chunk("DEL",table->posy,'\0');
                 move_up();
                 break;
             case ADD:
-                sequence[seq_pos++]=create_add();
+                sequence[seq_pos++]=add_seq_chunk("ADD",table->posx,table->up);
                 move_left();
                 break;
             case SET:
-                sequence[seq_pos++]=create_set();
+                sequence[seq_pos++]=add_seq_chunk("SET",table->posy,table->up);
             case NONE:
                 move_left();
                 move_up();
@@ -218,7 +186,7 @@ void savesequence(FILE *to, FILE *from, FILE *out){
     completetable();
     debug();
     __u_char ** seq=createsequence();
-    for (int i=get_distance()-1;i>=0;i--){
+    for (long i=get_distance()-1;i>=0;i--){
         fwrite(seq[i],1,8,out);
     }
 }
