@@ -16,6 +16,7 @@ fblock_t * createhblock(char *buff, uint size){
     block->size=size;
     block->buff=buff;
     block->next=NULL;
+    block->prev=NULL;
     return block;
 }
 
