@@ -6,7 +6,7 @@
 void print_usage(){
 
 }
-
+//TODO controllare i file prima di usarli.
 int main(int argc, char** argv) {
     if(argc<3){
         print_usage();

@@ -225,7 +225,7 @@ editblock_t *create_editblock(const unsigned char *buf){
     }
     seqblock->type[3]='\0';
     for (u_char i=0;i<4; i++){
-        seqblock->pos=(seqblock->pos<<i*8u)+buf[i+3];
+        seqblock->pos=(seqblock->pos<<8u)+buf[i+3];
     }
     seqblock->c=(char) buf[7];
     return seqblock;

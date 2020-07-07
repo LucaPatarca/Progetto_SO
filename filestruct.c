@@ -51,6 +51,7 @@ file_t* create_file(FILE *from){
         prev=prev->next;
     }
     file->last=prev;
+    if(file->last->size<1)file->last=file->last->prev;
     file->real_file=NULL;
     start(file);
     return file;

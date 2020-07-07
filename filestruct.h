@@ -8,7 +8,7 @@
 #ifndef PROGETTO_SO_FILELOADER_H
 #define PROGETTO_SO_FILELOADER_H
 
-#define BLOCK_MAX 32
+#define BLOCK_MAX 256
 
 typedef struct fblock{
     uint size;
