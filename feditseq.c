@@ -245,13 +245,13 @@ void applysequence(FILE *f_in, FILE *f_seq, FILE *f_out){
     int cur = next(file);
     int pos=0;
     int off=0;
-    while(edit && cur!=EOF){
+    while(cur!=EOF){
         if(pos>=BLOCK_MAX){
             fwrite(out,1,BLOCK_MAX,f_out);
             off+=pos;
             pos=0;
         }
-        if(edit->pos>pos+off){
+        if(!edit || edit->pos>pos+off){
             out[pos++]=cur;
             cur=next(file);
         } else if(edit->pos==pos+off){

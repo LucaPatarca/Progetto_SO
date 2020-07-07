@@ -17,8 +17,8 @@ typedef struct seqtable{
     row_t *cur;
     long posx;
     long posy;
-    char up;
-    char left;
+    int up;
+    int left;
     row_t *last;
 }seqtable_t;
 

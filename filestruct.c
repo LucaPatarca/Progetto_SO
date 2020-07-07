@@ -73,7 +73,7 @@ __u_char get_current(file_t *file){
     return file->cur->buff[file->pos];
 }
 
-__u_char next(file_t *file){
+int next(file_t *file){
     if(!file->cur) return EOF;
     char toreturn=get_current(file);
     file->pos++;
@@ -84,7 +84,7 @@ __u_char next(file_t *file){
     return toreturn;
 }
 
-__u_char prev(file_t *file){
+int prev(file_t *file){
     if(file->real_file){
         perror("cannot call prev() on a volatile file");
         return -1;
