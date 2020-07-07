@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(Progetto_SO C)
+project(filedistance C)
 
 set(CMAKE_C_STANDARD 11)
 

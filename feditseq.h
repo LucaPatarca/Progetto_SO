@@ -22,7 +22,13 @@ typedef struct seqtable{
     row_t *last;
 }seqtable_t;
 
-void savesequence(FILE *file1, FILE *file2, FILE *out);
+typedef struct editblock{
+    char *type;
+    uint pos;
+    char c;
+}editblock_t;
+
+void savesequence(FILE *to, FILE *from, FILE *out);
 void applysequence(FILE *file, FILE *seq, FILE *out);
 
 #endif //PROGETTO_SO_FEDITSEQ_H

@@ -11,7 +11,7 @@ void start(file_t *file){
     file->pos=0;
 }
 
-fblock_t * createhblock(char *buff, uint size){
+fblock_t * createhblock(__u_char *buff, uint size){
     fblock_t *block = malloc(sizeof(fblock_t));
     block->size=size;
     block->buff=buff;
@@ -20,8 +20,22 @@ fblock_t * createhblock(char *buff, uint size){
     return block;
 }
 
-file_t* load(FILE *from){
-    char *buff = malloc(BLOCK_MAX);
+void next_block(file_t *file){
+    if(file->real_file){
+        u_char *buf=malloc(BLOCK_MAX);
+        uint n = fread(buf,1,BLOCK_MAX,file->real_file);
+        if(n<1)file->cur=NULL;
+        else {
+            file->cur=createhblock(buf,n);
+            file->size+=n;
+        }
+    } else{
+        file->cur=file->cur->next;
+    }
+}
+
+file_t* create_file(FILE *from){
+    __u_char *buff = malloc(BLOCK_MAX);
     uint n=fread(buff,1,BLOCK_MAX,from);
     file_t *file = malloc(sizeof(file_t));
     file->size+=n;
@@ -37,28 +51,46 @@ file_t* load(FILE *from){
         prev=prev->next;
     }
     file->last=prev;
+    file->real_file=NULL;
     start(file);
     return file;
 }
 
-char get_current(file_t *file){
+file_t * create_file_volatile(FILE *from){
+    __u_char *buff = malloc(BLOCK_MAX);
+    uint n=fread(buff,1,BLOCK_MAX,from);
+    file_t *file = malloc(sizeof(file_t));
+    file->real_file=from;
+    file->cur=createhblock(buff,n);
+    file->first=NULL;
+    file->last=NULL;
+    file->pos=0;
+    file->size=n;
+    return file;
+}
+
+__u_char get_current(file_t *file){
     return file->cur->buff[file->pos];
 }
 
-char next(file_t *file){
+__u_char next(file_t *file){
     if(!file->cur) return EOF;
     char toreturn=get_current(file);
     file->pos++;
     if(file->pos>=file->cur->size){
         file->pos=0;
-        file->cur=file->cur->next;
+        next_block(file);
     }
     return toreturn;
 }
 
-char prev(file_t *file){
+__u_char prev(file_t *file){
+    if(file->real_file){
+        perror("cannot call prev() on a volatile file");
+        return -1;
+    }
     if(!file->cur) return EOF;
-    char toreturn=get_current(file);
+    __u_char toreturn=get_current(file);
     if(file->pos==0){
         file->cur=file->cur->prev;
         if(file->cur) file->pos=file->cur->size;

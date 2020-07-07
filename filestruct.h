@@ -14,7 +14,7 @@ typedef struct fblock{
     uint size;
     struct fblock *next;
     struct fblock *prev;
-    char *buff;
+    __u_char *buff;
 } fblock_t;
 
 typedef struct File{
@@ -23,12 +23,14 @@ typedef struct File{
     fblock_t *last;
     fblock_t *cur;
     uint pos;
+    FILE *real_file;
 } file_t;
 
-file_t* load(FILE *file);
+file_t* create_file(FILE *file);
+file_t* create_file_volatile(FILE *file);
 
-char next(file_t *file);
-char prev(file_t *file);
+__u_char next(file_t *file);
+__u_char prev(file_t *file);
 
 void start(file_t *file);
 void end(file_t *file);

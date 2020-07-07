@@ -109,12 +109,12 @@ void completetable(){
     table->last=table->cur;
 }
 
-unsigned char* add_seq_chunk(const char* type, uint pos, char c){
+unsigned char* add_seq_chunk(editblock_t *block){
     unsigned char *buf = malloc(8);
-    strcpy((char *)buf,type);
+    strcpy((char *)buf,block->type);
     for(u_char i=0;i<4;i++)
-        buf[i+3]= (pos>>(3-i)*8u) & 0xffu;
-    buf[7]=c;
+        buf[i+3]= (block->pos>>(3-i)*8u) & 0xffu;
+    buf[7]=block->c;
     return buf;
 }
 
@@ -152,27 +152,37 @@ void move_end(){
     table->up=prev(file_to);
 }
 
-__u_char ** createsequence(){
-    uint distance = get_distance();
-    __u_char **sequence=malloc(sizeof(char*)*distance);
+editblock_t *new_editblock(char *type, uint pos, char c){
+    editblock_t *new = malloc(sizeof(editblock_t));
+    new->c=c;
+    new->type= type;
+    new->pos=pos;
+    return new;
+}
+
+editblock_t ** createsequence(uint size){
+    editblock_t **sequence=malloc(sizeof(editblock_t*)*size);
     move_end();
-    int seq_pos=0;
+    uint seq_pos=size-1;
+    uint pos=table->posx;
     while(table->posy>-1||table->posx>-1){
         int result = choose_next();
         switch (result){
             case DEL:
-                sequence[seq_pos++]=add_seq_chunk("DEL",table->posy,'\0');
+                sequence[seq_pos--]=new_editblock("DEL",pos+1,'\0');
                 move_up();
                 break;
             case ADD:
-                sequence[seq_pos++]=add_seq_chunk("ADD",table->posx,table->up);
+                sequence[seq_pos--]=new_editblock("ADD",pos,table->up);
                 move_left();
+                pos--;
                 break;
             case SET:
-                sequence[seq_pos++]=add_seq_chunk("SET",table->posy,table->up);
+                sequence[seq_pos--]=new_editblock("SET",pos,table->up);
             case NONE:
                 move_left();
                 move_up();
+                pos--;
             default:
                 break;
         }
@@ -180,13 +190,84 @@ __u_char ** createsequence(){
     return sequence;
 }
 
+void ordersequence(editblock_t ** seq, uint size){
+    for(int i=1;i<size;i++){
+        editblock_t *temp = seq[i];
+        int j=i-1;
+        while(j>=0 && seq[j]->pos>temp->pos){
+            seq[j+1]=seq[j];
+            j--;
+        }
+        seq[j+1]=temp;
+    }
+}
+
 void savesequence(FILE *to, FILE *from, FILE *out){
-    file_to=load(to);
-    file_from=load(from);
+    file_to= create_file(to);
+    file_from= create_file_volatile(from);
     completetable();
-    debug();
-    __u_char ** seq=createsequence();
-    for (long i=get_distance()-1;i>=0;i--){
-        fwrite(seq[i],1,8,out);
+    //debug();
+    uint distance = get_distance();
+    editblock_t **seq=createsequence(distance);
+    ordersequence(seq, distance);
+    for (long i=0;i<distance;i++){
+        u_char *out_buff=add_seq_chunk(seq[i]);
+        fwrite(out_buff,1,8,out);
+    }
+}
+
+editblock_t *create_editblock(const unsigned char *buf){
+    editblock_t *seqblock = malloc(sizeof(editblock_t));
+    seqblock->pos=0;
+    seqblock->type=malloc(4);
+    for (int i = 0; i < 3; i++) {
+        seqblock->type[i] = (char) buf[i];
+    }
+    seqblock->type[3]='\0';
+    for (u_char i=0;i<4; i++){
+        seqblock->pos=(seqblock->pos<<i*8u)+buf[i+3];
+    }
+    seqblock->c=(char) buf[7];
+    return seqblock;
+}
+
+editblock_t *next_editblock(FILE *file){
+    u_char buff[8];
+    uint n=fread(buff,8,1,file);
+    if(n==1) return create_editblock(buff);
+    else return NULL;
+}
+
+void applysequence(FILE *f_in, FILE *f_seq, FILE *f_out){
+    u_char out[BLOCK_MAX];
+    file_t *file=create_file_volatile(f_in);
+    editblock_t *edit=next_editblock(f_seq);
+    int cur = next(file);
+    int pos=0;
+    int off=0;
+    while(edit && cur!=EOF){
+        if(pos>=BLOCK_MAX){
+            fwrite(out,1,BLOCK_MAX,f_out);
+            off+=pos;
+            pos=0;
+        }
+        if(edit->pos>pos+off){
+            out[pos++]=cur;
+            cur=next(file);
+        } else if(edit->pos==pos+off){
+            //apply
+            if(strcmp(edit->type,"ADD")==0){
+                out[pos++]=edit->c;
+            }else if(strcmp(edit->type,"DEL")==0){
+                cur=next(file);
+            } else if(strcmp(edit->type,"SET")==0){
+                out[pos++]=edit->c;
+                cur=next(file);
+            }
+            edit=next_editblock(f_seq);
+        }
+    }
+    if(pos>0){
+        fwrite(out,1,pos,f_out);
     }
 }
