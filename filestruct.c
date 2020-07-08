@@ -20,12 +20,18 @@ fblock_t * createhblock(__u_char *buff, uint size){
     return block;
 }
 
+void destroyblock(fblock_t *block){
+    free(block->buff);
+    free(block);
+}
+
 void next_block(file_t *file){
     if(file->real_file){
         u_char *buf=malloc(BLOCK_MAX);
         uint n = fread(buf,1,BLOCK_MAX,file->real_file);
         if(n<1)file->cur=NULL;
         else {
+            destroyblock(file->cur);
             file->cur=createhblock(buf,n);
             file->size+=n;
         }
@@ -68,6 +74,20 @@ file_t * create_file_volatile(FILE *from){
     file->pos=0;
     file->size=n;
     return file;
+}
+
+void close_file(file_t *file){
+    if(file->real_file && file->cur){
+        destroyblock(file->cur);
+    } else{
+        file->cur=file->first;
+        while(file->cur){
+            fblock_t *temp=file->cur->next;
+            destroyblock(file->cur);
+            file->cur=temp;
+        }
+    }
+    free(file);
 }
 
 __u_char get_current(file_t *file){

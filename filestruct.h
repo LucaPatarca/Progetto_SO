@@ -29,6 +29,8 @@ typedef struct File{
 file_t* create_file(FILE *file);
 file_t* create_file_volatile(FILE *file);
 
+void close_file(file_t *file);
+
 int next(file_t *file);
 int prev(file_t *file);
 

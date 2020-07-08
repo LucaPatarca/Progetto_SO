@@ -23,12 +23,14 @@ typedef struct seqtable{
 }seqtable_t;
 
 typedef struct editblock{
-    char *type;
+    char type[4];
     uint pos;
     char c;
 }editblock_t;
 
-void savesequence(FILE *to, FILE *from, FILE *out);
+void savesequence(FILE *from, FILE *to, FILE *out);
 void applysequence(FILE *file, FILE *seq, FILE *out);
+
+uint filedistance(FILE *file1, FILE *file2);
 
 #endif //PROGETTO_SO_FEDITSEQ_H

@@ -68,6 +68,11 @@ row_t *createrow() {
     return row;
 }
 
+void destroy_row(row_t *row){
+    free(row->buff);
+    free(row);
+}
+
 uint eval(){
     uint upperleft=get_upperleft();
     if(table->left==table->up) return upperleft;
@@ -85,6 +90,16 @@ seqtable_t *createtable(){
     st->posx=0;
     st->posy=0;
     return st;
+}
+
+void destroy_table(){
+    if(table->last) table->cur=table->last;
+    while (table->cur){
+        row_t *next = table->cur->upper;
+        destroy_row(table->cur);
+        table->cur=next;
+    }
+    free(table);
 }
 
 void completerow(){
@@ -149,13 +164,14 @@ void move_end(){
     table->cur=table->last;
     table->posx= file_to->size - 1;
     table->posy= file_from->size - 1;
+    close_file(file_from);
     table->up=prev(file_to);
 }
 
-editblock_t *new_editblock(char *type, uint pos, char c){
+editblock_t *new_editblock(char type[4], uint pos, char c){
     editblock_t *new = malloc(sizeof(editblock_t));
     new->c=c;
-    new->type= type;
+    strcpy(new->type,type);
     new->pos=pos;
     return new;
 }
@@ -202,24 +218,27 @@ void ordersequence(editblock_t ** seq, uint size){
     }
 }
 
-void savesequence(FILE *to, FILE *from, FILE *out){
+void savesequence(FILE *from, FILE *to, FILE *out){
     file_to= create_file(to);
     file_from= create_file_volatile(from);
     completetable();
-    //debug();
     uint distance = get_distance();
     editblock_t **seq=createsequence(distance);
+    close_file(file_to);
+    destroy_table();
     ordersequence(seq, distance);
     for (long i=0;i<distance;i++){
         u_char *out_buff=add_seq_chunk(seq[i]);
         fwrite(out_buff,1,8,out);
+        free(out_buff);
+        free(seq[i]);
     }
+    free(seq);
 }
 
 editblock_t *create_editblock(const unsigned char *buf){
     editblock_t *seqblock = malloc(sizeof(editblock_t));
     seqblock->pos=0;
-    seqblock->type=malloc(4);
     for (int i = 0; i < 3; i++) {
         seqblock->type[i] = (char) buf[i];
     }
@@ -242,9 +261,7 @@ void applysequence(FILE *f_in, FILE *f_seq, FILE *f_out){
     u_char out[BLOCK_MAX];
     file_t *file=create_file_volatile(f_in);
     editblock_t *edit=next_editblock(f_seq);
-    int cur = next(file);
-    int pos=0;
-    int off=0;
+    int pos=0, off=0, cur=next(file);
     while(cur!=EOF){
         if(pos>=BLOCK_MAX){
             fwrite(out,1,BLOCK_MAX,f_out);
@@ -264,10 +281,23 @@ void applysequence(FILE *f_in, FILE *f_seq, FILE *f_out){
                 out[pos++]=edit->c;
                 cur=next(file);
             }
+            free(edit);
             edit=next_editblock(f_seq);
         }
     }
     if(pos>0){
         fwrite(out,1,pos,f_out);
     }
+    close_file(file);
+}
+
+uint filedistance(FILE *file1, FILE *file2){
+    file_to = create_file(file2);
+    file_from = create_file_volatile(file1);
+    completetable();
+    uint distance = get_distance();
+    destroy_table();
+    close_file(file_from);
+    close_file(file_to);
+    return distance;
 }
