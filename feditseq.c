@@ -6,26 +6,18 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <fcntl.h>
+#include <ftw.h>
 
 #define ADD 1
 #define DEL 2
 #define SET 3
 #define NONE 4
+#define ENTRY_MAX 1024
 
 seqtable_t *table;
 file_t *file_to;
 file_t *file_from;
-
-void debug(){
-    row_t *cur=table->last;
-    while(cur){
-        for(int i=0; i < file_to->size; i++){
-            printf("|%3d|",cur->buff[i]);
-        }
-        printf("\n");
-        cur=cur->upper;
-    }
-}
 
 uint min(uint val1, uint val2, uint val3){
     uint min=val1;
@@ -111,10 +103,12 @@ void completerow(){
     start(file_to);
 }
 
-void completetable(){
+int completetable(){
     table = createtable();
     table->posy=0;
     while((table->left=next(file_from)) != EOF){
+        if(table->left == RMS)
+            return RMS;
         row_t *row = createrow();
         row->upper=table->cur;
         table->cur=row;
@@ -122,6 +116,7 @@ void completetable(){
         table->posy++;
     }
     table->last=table->cur;
+    return 0;
 }
 
 unsigned char* add_seq_chunk(editblock_t *block){
@@ -218,18 +213,22 @@ void ordersequence(editblock_t ** seq, uint size){
     }
 }
 
-void savesequence(FILE *from, FILE *to, FILE *out){
+void savesequence(const char *from, const char *to, const char *out){
     file_to= create_file(to);
     file_from= create_file_volatile(from);
-    completetable();
+    if(completetable()==RMS){
+        perror(from);
+        return;
+    }
     uint distance = get_distance();
     editblock_t **seq=createsequence(distance);
     close_file(file_to);
     destroy_table();
     ordersequence(seq, distance);
+    int out_fd = creat(out,0644);
     for (long i=0;i<distance;i++){
         u_char *out_buff=add_seq_chunk(seq[i]);
-        fwrite(out_buff,1,8,out);
+        write(out_fd,out_buff,8);
         free(out_buff);
         free(seq[i]);
     }
@@ -250,21 +249,23 @@ editblock_t *create_editblock(const unsigned char *buf){
     return seqblock;
 }
 
-editblock_t *next_editblock(FILE *file){
+editblock_t *next_editblock(int fd){
     u_char buff[8];
-    uint n=fread(buff,8,1,file);
-    if(n==1) return create_editblock(buff);
+    uint n=read(fd,buff,8);
+    if(n==8) return create_editblock(buff);
     else return NULL;
 }
 
-void applysequence(FILE *f_in, FILE *f_seq, FILE *f_out){
+void applysequence(const char *in_path, const char *seq_path, const char *out_path){
     u_char out[BLOCK_MAX];
-    file_t *file=create_file_volatile(f_in);
-    editblock_t *edit=next_editblock(f_seq);
+    file_t *file=create_file_volatile(in_path);
+    int seq_fd = open(seq_path,O_RDONLY);
+    int out_fd = creat(out_path,0644);
+    editblock_t *edit=next_editblock(seq_fd);
     int pos=0, off=0, cur=next(file);
     while(cur!=EOF){
         if(pos>=BLOCK_MAX){
-            fwrite(out,1,BLOCK_MAX,f_out);
+            write(out_fd,out,BLOCK_MAX);
             off+=pos;
             pos=0;
         }
@@ -282,22 +283,133 @@ void applysequence(FILE *f_in, FILE *f_seq, FILE *f_out){
                 cur=next(file);
             }
             free(edit);
-            edit=next_editblock(f_seq);
+            edit=next_editblock(seq_fd);
         }
     }
     if(pos>0){
-        fwrite(out,1,pos,f_out);
+        write(out_fd,out,pos);
     }
     close_file(file);
 }
 
-uint filedistance(FILE *file1, FILE *file2){
-    file_to = create_file(file2);
-    file_from = create_file_volatile(file1);
-    completetable();
+long filedistance(const char *path_file1, const char *path_file2){
+    file_to = create_file(path_file1);
+    file_from = create_file_volatile(path_file2);
+    if(!file_to){
+        perror(path_file1);
+        return -1;
+    }
+    if(!file_from){
+        perror(path_file2);
+        return -1;
+    }
+    if(completetable()==RMS){
+        perror(path_file2);
+        return -1;
+    }
     uint distance = get_distance();
     destroy_table();
     close_file(file_from);
     close_file(file_to);
     return distance;
+}
+
+typedef struct Entry{
+    long distance;
+    char path[PATH_MAX];
+} entry_t;
+
+entry_t entries[ENTRY_MAX];
+const char *filepath;
+long entries_limit=0;
+int entries_size=0;
+
+void clear_entries(){
+    for(int i=0;i<ENTRY_MAX;i++)
+        entries[i].distance=-1;
+    entries_size=0;
+}
+
+int add_entry(long distance, const char path[]){
+    entries[entries_size].distance=distance;
+    strcpy(entries[entries_size].path, path);
+    entries_size++;
+    if(entries_size>=ENTRY_MAX)
+        return 1;
+    return 0;
+}
+
+int find_min(const char *fpath, const struct stat *sb, int typeflag){
+    if(typeflag==FTW_F){
+        long distance=filedistance(filepath,fpath);
+        if(distance==-1)
+            return 0;
+        if(distance<entries_limit){
+            clear_entries();
+            entries_limit=distance;
+        }
+        if(distance==entries_limit){
+            return add_entry(distance,fpath);
+        }
+    }
+    return 0;
+}
+
+void searchmindistance(const char *file_path, const char *dir_path){
+    clear_entries();
+    entries_limit=LONG_MAX;
+    filepath=file_path;
+    char real_dir_path[PATH_MAX];
+    realpath(dir_path,real_dir_path);
+    int ret = ftw(real_dir_path,find_min,50);
+    if(ret==-1){
+        perror(dir_path);
+        return;
+    }
+    int i=0;
+    while(entries[i].distance!=-1 && i<ENTRY_MAX){
+        printf("%s:\t%ld\n",entries[i].path,entries[i].distance);
+        i++;
+    }
+    if(ret==1) printf("found more than %d files with the same minimum length but only the first %d are shown", ENTRY_MAX, ENTRY_MAX);
+}
+
+void order_entries(entry_t *pEntries){
+    int i=0;
+    while(i<ENTRY_MAX && pEntries[i].distance != -1){
+        entry_t temp = pEntries[i];
+        int j=i-1;
+        while(j>=0 && pEntries[j].distance > temp.distance){
+            pEntries[j + 1]=pEntries[j];
+            j--;
+        }
+        pEntries[j + 1]=temp;
+        i++;
+    }
+}
+
+int find_all(const char *fpath, const struct stat *sb, int typeflag){
+    if(typeflag==FTW_F){
+        long distance = filedistance(filepath,fpath);
+        if(distance!=-1 && distance<=entries_limit) {
+            return add_entry(distance,fpath);
+        }
+    }
+    return 0;
+}
+
+void searchalldistance(const char *file_path, const char *dir_path, int limit){
+    clear_entries();
+    filepath=file_path;
+    entries_limit=limit;
+    char real_dir_path[PATH_MAX];
+    realpath(dir_path,real_dir_path);
+    int ret = ftw(real_dir_path, find_all, 50);
+    order_entries(entries);
+    int i=0;
+    while(entries[i].distance!=-1 && i<ENTRY_MAX){
+        printf("%-7ld\t%s\n",entries[i].distance,entries[i].path);
+        i++;
+    }
+    if(ret==1) printf("found more than %d files but only the first %d are shown", ENTRY_MAX,ENTRY_MAX);
 }

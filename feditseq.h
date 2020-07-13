@@ -28,9 +28,10 @@ typedef struct editblock{
     char c;
 }editblock_t;
 
-void savesequence(FILE *from, FILE *to, FILE *out);
-void applysequence(FILE *file, FILE *seq, FILE *out);
+void savesequence(const char *from, const char *to, const char *out);
+void applysequence(const char *file, const char *seq, const char *out);
 
-uint filedistance(FILE *file1, FILE *file2);
-
+long filedistance(const char *path_file1, const char *path_file2);
+void searchmindistance(const char *file_path, const char *dir_path);
+void searchalldistance(const char *file_path, const char *dir_path, int limit);
 #endif //PROGETTO_SO_FEDITSEQ_H

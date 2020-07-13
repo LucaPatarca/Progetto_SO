@@ -9,6 +9,8 @@
 #define PROGETTO_SO_FILELOADER_H
 
 #define BLOCK_MAX 256
+#define MAX_SIZE 40000
+#define RMS -2
 
 typedef struct fblock{
     uint size;
@@ -23,11 +25,11 @@ typedef struct File{
     fblock_t *last;
     fblock_t *cur;
     uint pos;
-    FILE *real_file;
+    int fd;
 } file_t;
 
-file_t* create_file(FILE *file);
-file_t* create_file_volatile(FILE *file);
+file_t* create_file(const char *path);
+file_t* create_file_volatile(const char *path);
 
 void close_file(file_t *file);
 

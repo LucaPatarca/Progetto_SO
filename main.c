@@ -1,51 +1,59 @@
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include "feditseq.h"
 
 void print_usage(){
-    printf("usage: filedistance distance file_from file_to [file_out] \n"
-           "       filedistance apply file_from file_seq file_out \n");
+    printf("usage: filedistance distance [file_from] [file_to] [file_out] (optional) \n"
+           "       filedistance apply [file_from] [file_seq] [file_out] \n");
 }
-//TODO controllare i file prima di usarli.
+
 int main(int argc, char** argv) {
     if(argc<4){
         print_usage();
-        return 0;
+        return 1;
     }
     if(strcmp(argv[1],"distance")==0){
         if(argc==5){
             //savesequence
-            FILE *file_from = fopen(argv[2],"r");
-            FILE *file_to = fopen(argv[3],"r");
-            FILE *file_seq = fopen(argv[4],"w");
-            savesequence(file_from,file_to,file_seq);
-            fclose(file_from);
-            fclose(file_to);
-            fclose(file_seq);
+            savesequence(argv[2],argv[3],argv[4]);
+            return 0;
         } else if(argc==4){
             //filedistance
-            FILE *file_from = fopen(argv[2],"r");
-            FILE *file_to = fopen(argv[3],"r");
-            uint distance = filedistance(file_from,file_to);
-            fclose(file_from);
-            fclose(file_to);
-            printf("DISTANCE: %d\n",distance);
+            long distance = filedistance(argv[2],argv[3]);
+            if(distance==-1)
+                return 1;
+            printf("DISTANCE: %ld\n",distance);
+            return 0;
         } else{
             print_usage();
+            return 1;
         }
-        return 0;
     }
     if(strcmp(argv[1],"apply")==0){
         if(argc==5){
             //applysequence
-            FILE *file_from = fopen(argv[2],"r");
-            FILE *file_seq = fopen(argv[3],"r");
-            FILE *file_out = fopen(argv[4],"w");
-            applysequence(file_from,file_seq,file_out);
-            fclose(file_from);
-            fclose(file_seq);
-            fclose(file_out);
+            applysequence(argv[2],argv[3],argv[4]);
         } else print_usage();
+        return 0;
+    }
+    if(strcmp(argv[1],"search")==0){
+        if(argc==4){
+            //search min
+            searchmindistance(argv[2],argv[3]);
+        }else{
+            print_usage();
+            return 1;
+        }
+        return 0;
+    }
+    if(strcmp(argv[1],"searchall")==0){
+        if(argc==5){
+            searchalldistance(argv[2],argv[3],atoi(argv[4]));
+        } else{
+            print_usage();
+            return 1;
+        }
         return 0;
     }
     return 0;
