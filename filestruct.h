@@ -39,4 +39,6 @@ int prev(file_t *file);
 void start(file_t *file);
 void end(file_t *file);
 
+int check_file(int fd);
+
 #endif //PROGETTO_SO_FILELOADER_H

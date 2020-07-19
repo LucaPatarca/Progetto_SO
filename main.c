@@ -49,7 +49,13 @@ int main(int argc, char** argv) {
     }
     if(strcmp(argv[1],"searchall")==0){
         if(argc==5){
-            searchalldistance(argv[2],argv[3],atoi(argv[4]));
+            int limit=(int) strtol(argv[4],NULL,10);
+            if(limit==0){
+                printf("%s is not a valid limit\n",argv[4]);
+                print_usage();
+                return 0;
+            }
+            searchalldistance(argv[2],argv[3],limit);
         } else{
             print_usage();
             return 1;

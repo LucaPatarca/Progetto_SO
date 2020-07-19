@@ -25,7 +25,7 @@ typedef struct seqtable{
 typedef struct editblock{
     char type[4];
     uint pos;
-    char c;
+    unsigned char c;
 }editblock_t;
 
 void savesequence(const char *from, const char *to, const char *out);

@@ -8,6 +8,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <ftw.h>
+#include <errno.h>
 
 #define ADD 1
 #define DEL 2
@@ -163,7 +164,9 @@ void move_end(){
     table->up=prev(file_to);
 }
 
-editblock_t *new_editblock(char type[4], uint pos, char c){
+editblock_t *new_editblock(char type[4], uint pos, int c){
+    if(c<0)
+        return NULL;
     editblock_t *new = malloc(sizeof(editblock_t));
     new->c=c;
     strcpy(new->type,type);
@@ -214,8 +217,16 @@ void ordersequence(editblock_t ** seq, uint size){
 }
 
 void savesequence(const char *from, const char *to, const char *out){
-    file_to= create_file(to);
-    file_from= create_file_volatile(from);
+    file_to = create_file(to);
+    file_from = create_file_volatile(from);
+    if(!file_to) {
+        perror(to);
+        return;
+    }
+    if(!file_from) {
+        perror(from);
+        return;
+    }
     if(completetable()==RMS){
         perror(from);
         return;
@@ -256,40 +267,94 @@ editblock_t *next_editblock(int fd){
     else return NULL;
 }
 
+int seq_pos;
+int seq_off;
+unsigned char seq_out[BLOCK_MAX];
+int seq_in_cur;
+file_t *seq_in_file;
+
+int seq_init(const char *in_file_path){
+    seq_in_file=create_file_volatile(in_file_path);
+    if(!seq_in_file){
+        perror(in_file_path);
+        return -1;
+    }
+    seq_pos=0;
+    seq_off=0;
+    seq_in_cur=next(seq_in_file);
+    return 0;
+}
+
+void apply_edit_block(editblock_t *edit){
+    if(strcmp(edit->type,"ADD")==0){
+        seq_out[seq_pos++]=edit->c;
+    }else if(strcmp(edit->type,"DEL")==0){
+        seq_in_cur=next(seq_in_file);
+    } else if(strcmp(edit->type,"SET")==0){
+        seq_out[seq_pos++]=edit->c;
+        seq_in_cur=next(seq_in_file);
+    }
+}
+
+void write_seq_buffer(int out_fd){
+    write(out_fd, seq_out, BLOCK_MAX);
+    seq_off+=seq_pos;
+    seq_pos=0;
+}
+
+int check_editblock(editblock_t *edit){
+    if(edit==NULL) return 0;
+    if(strcmp(edit->type,"ADD")==0 ||
+       strcmp(edit->type,"SET")==0 ||
+       strcmp(edit->type,"DEL")==0){
+        return 0;
+    }
+    return 1;
+}
+
 void applysequence(const char *in_path, const char *seq_path, const char *out_path){
-    u_char out[BLOCK_MAX];
-    file_t *file=create_file_volatile(in_path);
+    if(seq_init(in_path)!=0)
+        return;
     int seq_fd = open(seq_path,O_RDONLY);
+    if(check_file(seq_fd)!=0){
+        perror(seq_path);
+        return;
+    }
     int out_fd = creat(out_path,0644);
+    if(out_fd==-1){
+        perror(out_path);
+        return;
+    }
+    if(seq_fd==-1){
+        perror(in_path);
+        return;
+    }
     editblock_t *edit=next_editblock(seq_fd);
-    int pos=0, off=0, cur=next(file);
-    while(cur!=EOF){
-        if(pos>=BLOCK_MAX){
-            write(out_fd,out,BLOCK_MAX);
-            off+=pos;
-            pos=0;
+    if(check_editblock(edit)!=0){
+        printf("%s is not a valid edit sequence file or it is corrupted.\n",seq_path);
+        return;
+    }
+    while(seq_in_cur != EOF){
+        if(seq_pos >= BLOCK_MAX){
+            write_seq_buffer(out_fd);
         }
-        if(!edit || edit->pos>pos+off){
-            out[pos++]=cur;
-            cur=next(file);
-        } else if(edit->pos==pos+off){
-            //apply
-            if(strcmp(edit->type,"ADD")==0){
-                out[pos++]=edit->c;
-            }else if(strcmp(edit->type,"DEL")==0){
-                cur=next(file);
-            } else if(strcmp(edit->type,"SET")==0){
-                out[pos++]=edit->c;
-                cur=next(file);
-            }
+        if(!edit || edit->pos > seq_pos + seq_off){
+            seq_out[seq_pos++]=seq_in_cur;
+            seq_in_cur=next(seq_in_file);
+        } else if(edit->pos == seq_pos + seq_off){
+            apply_edit_block(edit);
             free(edit);
             edit=next_editblock(seq_fd);
+            if(check_editblock(edit)!=0){
+                printf("%s is not a valid edit sequence file or it is corrupted.\n",seq_path);
+                return;
+            }
         }
     }
-    if(pos>0){
-        write(out_fd,out,pos);
+    if(seq_pos > 0){
+        write(out_fd, seq_out, seq_pos);
     }
-    close_file(file);
+    close_file(seq_in_file);
 }
 
 long filedistance(const char *path_file1, const char *path_file2){
@@ -342,8 +407,11 @@ int add_entry(long distance, const char path[]){
 int find_min(const char *fpath, const struct stat *sb, int typeflag){
     if(typeflag==FTW_F){
         long distance=filedistance(filepath,fpath);
-        if(distance==-1)
-            return 0;
+        if(distance==-1){
+            if(errno==ENOENT || errno==EBADF)
+                return 2;
+            else return 0;
+        }
         if(distance<entries_limit){
             clear_entries();
             entries_limit=distance;
@@ -355,7 +423,20 @@ int find_min(const char *fpath, const struct stat *sb, int typeflag){
     return 0;
 }
 
+int is_dir(const char *path){
+    struct stat status;
+    stat(path,&status);
+    if(S_ISDIR(status.st_mode))
+        return 1;
+    else
+        return 0;
+}
+
 void searchmindistance(const char *file_path, const char *dir_path){
+    if(!is_dir(dir_path)){
+        printf("%s is not a directory\n",dir_path);
+        return;
+    }
     clear_entries();
     entries_limit=LONG_MAX;
     filepath=file_path;
@@ -393,18 +474,27 @@ int find_all(const char *fpath, const struct stat *sb, int typeflag){
         long distance = filedistance(filepath,fpath);
         if(distance!=-1 && distance<=entries_limit) {
             return add_entry(distance,fpath);
-        }
+        } else if(errno==ENOENT || errno==EBADF)
+            return 2;
     }
     return 0;
 }
 
 void searchalldistance(const char *file_path, const char *dir_path, int limit){
+    if(!is_dir(dir_path)){
+        printf("%s is not a directory\n",dir_path);
+        return;
+    }
     clear_entries();
     filepath=file_path;
     entries_limit=limit;
     char real_dir_path[PATH_MAX];
     realpath(dir_path,real_dir_path);
     int ret = ftw(real_dir_path, find_all, 50);
+    if(ret==-1){
+        perror(dir_path);
+        return;
+    }
     order_entries(entries);
     int i=0;
     while(entries[i].distance!=-1 && i<ENTRY_MAX){

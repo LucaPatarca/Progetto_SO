@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <sys/stat.h>
 
 void start(file_t *file){
     file->cur=file->first;
@@ -29,7 +30,7 @@ void destroyblock(fblock_t *block){
 
 void max_size_reached(file_t *file) {
     file->cur=NULL;
-    errno=EOVERFLOW;
+    errno=EFBIG;
 }
 
 int next_block(file_t *file){
@@ -52,9 +53,27 @@ int next_block(file_t *file){
     return 0;
 }
 
+int check_file(int fd){
+    if(fd==-1){
+        return -1;
+    }
+    struct stat buf;
+    if ((fstat(fd, &buf)) != 0) {
+        return -1;
+    }
+    if (S_ISREG(buf.st_mode) == 0) {
+        errno = EBADF;
+        return -1;
+    }
+    return 0;
+}
+
 file_t* create_file(const char *path){
+    //TODO spezzare
     int fd=open(path,O_RDONLY);
     if(fd==-1)
+        return NULL;
+    if(check_file(fd)!=0)
         return NULL;
     __u_char *buff = malloc(BLOCK_MAX);
     uint n=read(fd,buff,BLOCK_MAX);
@@ -68,7 +87,7 @@ file_t* create_file(const char *path){
         n=read(fd,buff,BLOCK_MAX);
         file->size+=n;
         if(file->size>MAX_SIZE){
-            errno=EOVERFLOW;
+            errno=EFBIG;
             return NULL;
         }
         prev->next=createhblock(buff,n);
@@ -86,6 +105,8 @@ file_t* create_file(const char *path){
 file_t * create_file_volatile(const char *path){
     int fd=open(path,O_RDONLY);
     if(fd==-1)
+        return NULL;
+    if(check_file(fd)!=0)
         return NULL;
     __u_char *buff = malloc(BLOCK_MAX);
     uint n=read(fd,buff,BLOCK_MAX);
@@ -133,7 +154,7 @@ int next(file_t *file){
 
 int prev(file_t *file){
     if(file->fd!=-1){
-        perror("cannot call prev() on a volatile file");
+        errno=ENOTSUP;
         return -1;
     }
     if(!file->cur) return EOF;
