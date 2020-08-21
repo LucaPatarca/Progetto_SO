@@ -1,60 +1,84 @@
 //
 // Created by luca on 19/05/20.
 //
-#include "feditseq.h"
 #include "filestruct.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
 #include <ftw.h>
-#include <errno.h>
+#include <unistd.h>
 
 #define ADD 1
 #define DEL 2
 #define SET 3
 #define NONE 4
 #define ENTRY_MAX 1024
+#define PATH_MAX 4096
+
+typedef struct row{
+    unsigned int *buff;
+    struct row *upper;
+} row_t;
+
+typedef struct seqtable{
+    row_t *cur;
+    long posx;
+    long posy;
+    int up;
+    int left;
+    row_t *last;
+}seqtable_t;
+
+typedef struct editblock{
+    char type[4];
+    unsigned int pos;
+    unsigned char c;
+}editblock_t;
 
 seqtable_t *table;
 file_t *file_to;
 file_t *file_from;
 
-uint min(uint val1, uint val2, uint val3){
-    uint min=val1;
+unsigned int min(unsigned int val1, unsigned int val2, unsigned int val3){
+    unsigned int min=val1;
     if(val2<min) min=val2;
     if(val3<min) min=val3;
     return min;
 }
 
-uint get_upper(){
+unsigned int get_upper(){
     if(!table->cur->upper) return table->posx+1;
     return table->cur->upper->buff[table->posx];
 }
 
-uint get_left(){
+unsigned int get_left(){
     if(table->posx==0) return table->posy+1;
     return table->cur->buff[table->posx-1];
 }
 
-uint get_upperleft(){
+unsigned int get_upperleft(){
     if(!table->cur->upper) return table->posx;
     if(table->posx==0) return table->posy;
     return table->cur->upper->buff[table->posx-1];
 }
 
-uint get_distance(){
+unsigned int get_distance(){
+    if(file_to->size==0)
+        return file_from->size;
+    if(file_from->size==0)
+        return file_to->size;
     return table->last->buff[file_to->size - 1];
 }
 
-uint get_curr(){
+unsigned int get_curr(){
     return table->cur->buff[table->posx];
 }
 
 row_t *createrow() {
     row_t *row = malloc(sizeof(row_t));
     row->upper=NULL;
-    row->buff=malloc(file_to->size * sizeof(uint));
+    row->buff=malloc(file_to->size * sizeof(unsigned int));
     for(int i=0; i < file_to->size; i++){
         row->buff[i]=0;
     }
@@ -66,11 +90,11 @@ void destroy_row(row_t *row){
     free(row);
 }
 
-uint eval(){
-    uint upperleft=get_upperleft();
+unsigned int eval(){
+    unsigned int upperleft=get_upperleft();
     if(table->left==table->up) return upperleft;
-    uint left=get_left();
-    uint up=get_upper();
+    unsigned int left=get_left();
+    unsigned int up=get_upper();
     return min(upperleft,up,left)+1;
 }
 
@@ -123,17 +147,17 @@ int completetable(){
 unsigned char* add_seq_chunk(editblock_t *block){
     unsigned char *buf = malloc(8);
     strcpy((char *)buf,block->type);
-    for(u_char i=0;i<4;i++)
+    for(unsigned char i=0;i<4;i++)
         buf[i+3]= (block->pos>>(3-i)*8u) & 0xffu;
     buf[7]=block->c;
     return buf;
 }
 
 int choose_next(){
-    uint up=get_upper();
-    uint left=get_left();
-    uint upperleft=get_upperleft();
-    uint m = min(up,left,upperleft);
+    unsigned int up=get_upper();
+    unsigned int left=get_left();
+    unsigned int upperleft=get_upperleft();
+    unsigned int m = min(up,left,upperleft);
     if(m==upperleft)
         if(upperleft==get_curr())
             return NONE;
@@ -164,7 +188,7 @@ void move_end(){
     table->up=prev(file_to);
 }
 
-editblock_t *new_editblock(char type[4], uint pos, int c){
+editblock_t *new_editblock(char type[4], unsigned int pos, int c){
     if(c<0)
         return NULL;
     editblock_t *new = malloc(sizeof(editblock_t));
@@ -174,11 +198,11 @@ editblock_t *new_editblock(char type[4], uint pos, int c){
     return new;
 }
 
-editblock_t ** createsequence(uint size){
+editblock_t ** createsequence(unsigned int size){
     editblock_t **sequence=malloc(sizeof(editblock_t*)*size);
     move_end();
-    uint seq_pos=size-1;
-    uint pos=table->posx;
+    unsigned int seq_pos=size-1;
+    unsigned int pos=table->posx;
     while(table->posy>-1||table->posx>-1){
         int result = choose_next();
         switch (result){
@@ -204,7 +228,7 @@ editblock_t ** createsequence(uint size){
     return sequence;
 }
 
-void ordersequence(editblock_t ** seq, uint size){
+void ordersequence(editblock_t ** seq, unsigned int size){
     for(int i=1;i<size;i++){
         editblock_t *temp = seq[i];
         int j=i-1;
@@ -231,14 +255,14 @@ void savesequence(const char *from, const char *to, const char *out){
         perror(from);
         return;
     }
-    uint distance = get_distance();
+    unsigned int distance = get_distance();
     editblock_t **seq=createsequence(distance);
     close_file(file_to);
     destroy_table();
     ordersequence(seq, distance);
     int out_fd = creat(out,0644);
     for (long i=0;i<distance;i++){
-        u_char *out_buff=add_seq_chunk(seq[i]);
+        unsigned char *out_buff=add_seq_chunk(seq[i]);
         write(out_fd,out_buff,8);
         free(out_buff);
         free(seq[i]);
@@ -253,7 +277,7 @@ editblock_t *create_editblock(const unsigned char *buf){
         seqblock->type[i] = (char) buf[i];
     }
     seqblock->type[3]='\0';
-    for (u_char i=0;i<4; i++){
+    for (unsigned char i=0;i<4; i++){
         seqblock->pos=(seqblock->pos<<8u)+buf[i+3];
     }
     seqblock->c=(char) buf[7];
@@ -261,8 +285,8 @@ editblock_t *create_editblock(const unsigned char *buf){
 }
 
 editblock_t *next_editblock(int fd){
-    u_char buff[8];
-    uint n=read(fd,buff,8);
+    unsigned char buff[8];
+    unsigned int n=read(fd,buff,8);
     if(n==8) return create_editblock(buff);
     else return NULL;
 }
@@ -357,22 +381,27 @@ void applysequence(const char *in_path, const char *seq_path, const char *out_pa
     close_file(seq_in_file);
 }
 
+char search_interrupt=0;
+
 long filedistance(const char *path_file1, const char *path_file2){
     file_to = create_file(path_file1);
     file_from = create_file_volatile(path_file2);
+    if(!file_from){
+        search_interrupt=1;
+        perror(path_file2);
+        return -1;
+    }
     if(!file_to){
         perror(path_file1);
         return -1;
     }
-    if(!file_from){
-        perror(path_file2);
-        return -1;
-    }
+    long distance = -1;
     if(completetable()==RMS){
+        search_interrupt=1;
         perror(path_file2);
-        return -1;
+    }else{
+        distance=get_distance();
     }
-    uint distance = get_distance();
     destroy_table();
     close_file(file_from);
     close_file(file_to);
@@ -406,9 +435,9 @@ int add_entry(long distance, const char path[]){
 
 int find_min(const char *fpath, const struct stat *sb, int typeflag){
     if(typeflag==FTW_F){
-        long distance=filedistance(filepath,fpath);
+        long distance=filedistance(fpath,filepath);
         if(distance==-1){
-            if(errno==ENOENT || errno==EBADF)
+            if(search_interrupt)
                 return 2;
             else return 0;
         }
@@ -426,7 +455,7 @@ int find_min(const char *fpath, const struct stat *sb, int typeflag){
 int is_dir(const char *path){
     struct stat status;
     stat(path,&status);
-    if(S_ISDIR(status.st_mode))
+    if(S_ISDIR(status.st_mode)!=0)
         return 1;
     else
         return 0;
@@ -438,7 +467,7 @@ void searchmindistance(const char *file_path, const char *dir_path){
         return;
     }
     clear_entries();
-    entries_limit=LONG_MAX;
+    entries_limit=0xFFFFFFFF;
     filepath=file_path;
     char real_dir_path[PATH_MAX];
     realpath(dir_path,real_dir_path);
@@ -474,7 +503,7 @@ int find_all(const char *fpath, const struct stat *sb, int typeflag){
         long distance = filedistance(filepath,fpath);
         if(distance!=-1 && distance<=entries_limit) {
             return add_entry(distance,fpath);
-        } else if(errno==ENOENT || errno==EBADF)
+        } else if(search_interrupt)
             return 2;
     }
     return 0;

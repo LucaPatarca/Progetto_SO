@@ -2,29 +2,26 @@
 // Created by luca on 03/07/20.
 //
 
-#include <bits/types/FILE.h>
-#include <zconf.h>
-
 #ifndef PROGETTO_SO_FILELOADER_H
 #define PROGETTO_SO_FILELOADER_H
 
 #define BLOCK_MAX 256
-#define MAX_SIZE 40000
+#define MAX_SIZE 10000000
 #define RMS -2
 
 typedef struct fblock{
-    uint size;
+    unsigned int size;
     struct fblock *next;
     struct fblock *prev;
-    __u_char *buff;
+    unsigned char *buff;
 } fblock_t;
 
 typedef struct File{
-    uint size;
+    unsigned int size;
     fblock_t *first;
     fblock_t *last;
     fblock_t *cur;
-    uint pos;
+    unsigned int pos;
     int fd;
 } file_t;
 

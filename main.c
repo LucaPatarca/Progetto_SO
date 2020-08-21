@@ -1,11 +1,14 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "feditseq.h"
+#include <time.h>
+#include "editsequence.h"
 
 void print_usage(){
     printf("usage: filedistance distance [file_from] [file_to] [file_out] (optional) \n"
-           "       filedistance apply [file_from] [file_seq] [file_out] \n");
+           "       filedistance apply [file_from] [file_seq] [file_out] \n"
+           "       filedistance search [file_path] [dir_path] \n"
+           "       filedistance searchall [file_path] [dir_path] [limit]");
 }
 
 int main(int argc, char** argv) {
@@ -20,10 +23,15 @@ int main(int argc, char** argv) {
             return 0;
         } else if(argc==4){
             //filedistance
+            clock_t start = clock();
             long distance = filedistance(argv[2],argv[3]);
-            if(distance==-1)
+            clock_t end = clock();
+            if(distance==-1){
+                perror("DISTANCE");
                 return 1;
-            printf("DISTANCE: %ld\n",distance);
+            }
+            double time = (double)(end-start)/CLOCKS_PER_SEC;
+            printf("DISTANCE: %ld\nTIME: %f seconds",distance, time);
             return 0;
         } else{
             print_usage();
