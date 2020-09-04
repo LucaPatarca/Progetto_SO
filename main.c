@@ -3,12 +3,13 @@
 #include <stdlib.h>
 #include <time.h>
 #include "editsequence.h"
+#include "filedistance.h"
 
 void print_usage(){
-    printf("usage: filedistance distance [file_from] [file_to] [file_out] (optional) \n"
-           "       filedistance apply [file_from] [file_seq] [file_out] \n"
-           "       filedistance search [file_path] [dir_path] \n"
-           "       filedistance searchall [file_path] [dir_path] [limit]");
+    printf("usage: file_distance distance [file_from] [file_to] [file_out] (optional) \n"
+           "       file_distance apply [file_from] [file_seq] [file_out] \n"
+           "       file_distance search [file_path] [dir_path] \n"
+           "       file_distance searchall [file_path] [dir_path] [limit]");
 }
 
 int main(int argc, char** argv) {
@@ -18,20 +19,20 @@ int main(int argc, char** argv) {
     }
     if(strcmp(argv[1],"distance")==0){
         if(argc==5){
-            //savesequence
-            savesequence(argv[2],argv[3],argv[4]);
+            //save_sequence
+            save_sequence(argv[2], argv[3], argv[4]);
             return 0;
         } else if(argc==4){
-            //filedistance
+            //file_distance
             clock_t start = clock();
-            long distance = filedistance(argv[2],argv[3]);
+            long distance = file_distance(argv[2], argv[3]);
             clock_t end = clock();
             if(distance==-1){
                 perror("DISTANCE");
                 return 1;
             }
             double time = (double)(end-start)/CLOCKS_PER_SEC;
-            printf("DISTANCE: %ld\nTIME: %f seconds",distance, time);
+            printf("DISTANCE: %ld\nTIME: %f seconds\n\n",distance, time);
             return 0;
         } else{
             print_usage();

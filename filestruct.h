@@ -6,7 +6,7 @@
 #define PROGETTO_SO_FILELOADER_H
 
 #define BLOCK_MAX 256
-#define MAX_SIZE 10000000
+#define MAX_SIZE 1000000
 #define RMS -2
 
 typedef struct fblock{
@@ -37,5 +37,6 @@ void start(file_t *file);
 void end(file_t *file);
 
 int check_file(int fd);
+unsigned char get_current(file_t *file);
 
 #endif //PROGETTO_SO_FILELOADER_H

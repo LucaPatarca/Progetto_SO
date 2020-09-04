@@ -11,6 +11,8 @@
 #include <unistd.h>
 
 void start(file_t *file){
+    if(file->fd!=-1)
+        return;
     file->cur=file->first;
     file->pos=0;
 }

@@ -2,86 +2,43 @@
 // Created by luca on 19/05/20.
 //
 #include "filestruct.h"
+#include "filedistance.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <fcntl.h>
-#include <ftw.h>
 #include <unistd.h>
+#include <fcntl.h>
 
-#define ADD 1
-#define DEL 2
-#define SET 3
-#define NONE 4
-#define ENTRY_MAX 1024
-#define PATH_MAX 4096
+#define ADD 0
+#define DEL 1
+#define SET 2
+#define NONE 3
 
 typedef struct row{
-    unsigned int *buff;
+    unsigned char *buff;
     struct row *upper;
 } row_t;
 
-typedef struct seqtable{
+typedef struct sequenceTable{
     row_t *cur;
     long posx;
     long posy;
-    int up;
-    int left;
-    row_t *last;
-}seqtable_t;
+}sequenceTable_t;
 
-typedef struct editblock{
+typedef struct editBlock{
     char type[4];
     unsigned int pos;
     unsigned char c;
-}editblock_t;
+}editBlock_t;
 
-seqtable_t *table;
 file_t *file_to;
 file_t *file_from;
 
-unsigned int min(unsigned int val1, unsigned int val2, unsigned int val3){
-    unsigned int min=val1;
-    if(val2<min) min=val2;
-    if(val3<min) min=val3;
-    return min;
-}
-
-unsigned int get_upper(){
-    if(!table->cur->upper) return table->posx+1;
-    return table->cur->upper->buff[table->posx];
-}
-
-unsigned int get_left(){
-    if(table->posx==0) return table->posy+1;
-    return table->cur->buff[table->posx-1];
-}
-
-unsigned int get_upperleft(){
-    if(!table->cur->upper) return table->posx;
-    if(table->posx==0) return table->posy;
-    return table->cur->upper->buff[table->posx-1];
-}
-
-unsigned int get_distance(){
-    if(file_to->size==0)
-        return file_from->size;
-    if(file_from->size==0)
-        return file_to->size;
-    return table->last->buff[file_to->size - 1];
-}
-
-unsigned int get_curr(){
-    return table->cur->buff[table->posx];
-}
-
-row_t *createrow() {
+row_t *create_row(unsigned int size) {
     row_t *row = malloc(sizeof(row_t));
     row->upper=NULL;
-    row->buff=malloc(file_to->size * sizeof(unsigned int));
-    for(int i=0; i < file_to->size; i++){
-        row->buff[i]=0;
-    }
+    row->buff=malloc((size/4)+1);
+    memset(row->buff,0,(size/4)+1);
     return row;
 }
 
@@ -90,76 +47,31 @@ void destroy_row(row_t *row){
     free(row);
 }
 
-unsigned int eval(){
-    unsigned int upperleft=get_upperleft();
-    if(table->left==table->up) return upperleft;
-    unsigned int left=get_left();
-    unsigned int up=get_upper();
-    return min(upperleft,up,left)+1;
-}
-
-seqtable_t *createtable(){
-    seqtable_t *st = malloc(sizeof(seqtable_t));
-    st->left=0;
-    st->up=0;
-    st->cur=NULL;
-    st->last=NULL;
+sequenceTable_t *create_sequence_table(){
+    sequenceTable_t *st = malloc(sizeof(sequenceTable_t));
+    st->cur=create_row(file_to->size);
     st->posx=0;
     st->posy=0;
+    st->cur->buff[0]=0xC0;
     return st;
 }
 
-void destroy_table(){
-    if(table->last) table->cur=table->last;
-    while (table->cur){
-        row_t *next = table->cur->upper;
-        destroy_row(table->cur);
-        table->cur=next;
+void destroy_sequence_table(sequenceTable_t *sequenceTable){
+    while (sequenceTable->cur){
+        row_t *next = sequenceTable->cur->upper;
+        destroy_row(sequenceTable->cur);
+        sequenceTable->cur=next;
     }
-    free(table);
+    free(sequenceTable);
 }
 
-void completerow(){
-    table->posx=0;
-    while((table->up= next(file_to)) != EOF){
-        table->cur->buff[table->posx]=eval();
-        table->posx++;
-    }
-    start(file_to);
-}
-
-int completetable(){
-    table = createtable();
-    table->posy=0;
-    while((table->left=next(file_from)) != EOF){
-        if(table->left == RMS)
-            return RMS;
-        row_t *row = createrow();
-        row->upper=table->cur;
-        table->cur=row;
-        completerow();
-        table->posy++;
-    }
-    table->last=table->cur;
-    return 0;
-}
-
-unsigned char* add_seq_chunk(editblock_t *block){
-    unsigned char *buf = malloc(8);
-    strcpy((char *)buf,block->type);
-    for(unsigned char i=0;i<4;i++)
-        buf[i+3]= (block->pos>>(3-i)*8u) & 0xffu;
-    buf[7]=block->c;
-    return buf;
-}
-
-int choose_next(){
-    unsigned int up=get_upper();
-    unsigned int left=get_left();
-    unsigned int upperleft=get_upperleft();
+unsigned char choose_next_move(sequenceTable_t *sequenceTable, distanceTable_t *distanceTable){
+    unsigned int up=distanceTable->upper[sequenceTable->posx];
+    unsigned int left=distanceTable->current[sequenceTable->posx - 1];
+    unsigned int upperleft=distanceTable->upper[sequenceTable->posx - 1];
     unsigned int m = min(up,left,upperleft);
     if(m==upperleft)
-        if(upperleft==get_curr())
+        if(upperleft == distanceTable->current[sequenceTable->posx])
             return NONE;
         else return SET;
     else if (m==left)
@@ -169,57 +81,87 @@ int choose_next(){
     return -1;
 }
 
-void move_up(){
-    table->cur=table->cur->upper;
-    table->posy--;
+void encode_current_row(sequenceTable_t *sequenceTable, distanceTable_t *distanceTable){
+    sequenceTable->cur->buff[0]=0x40;
+    for(sequenceTable->posx=1; sequenceTable->posx < distanceTable->sizeX; sequenceTable->posx++){
+        unsigned int shift_by = (3-sequenceTable->posx%4)*2;
+        unsigned char value = choose_next_move(sequenceTable, distanceTable);
+        unsigned int pos = sequenceTable->posx/4;
+        sequenceTable->cur->buff[pos]+=value<<shift_by;
+    }
 }
 
-void move_left(){
-    table->posx--;
-    table->up=prev(file_to);
+int complete_sequence_table(sequenceTable_t *sequenceTable, distanceTable_t *distanceTable){
+    int result;
+    while((result=next_row(distanceTable)) == 0){
+        sequenceTable->posy++;
+        row_t *tmp = sequenceTable->cur;
+        sequenceTable->cur = create_row(file_to->size);
+        sequenceTable->cur->upper=tmp;
+        encode_current_row(sequenceTable, distanceTable);
+    }
+    return result;
 }
 
-void move_end(){
-    end(file_to);
-    table->cur=table->last;
-    table->posx= file_to->size - 1;
-    table->posy= file_from->size - 1;
-    close_file(file_from);
-    table->up=prev(file_to);
+unsigned char decode_current(sequenceTable_t *sequenceTable){
+    unsigned int shifted_by = (3-sequenceTable->posx%4)*2;
+    unsigned int pos = sequenceTable->posx/4;
+    unsigned char value = sequenceTable->cur->buff[pos];
+    unsigned char shiftedValue = value>>shifted_by;
+    unsigned char maskedValue = shiftedValue & 0x3u;
+    return maskedValue;
 }
 
-editblock_t *new_editblock(char type[4], unsigned int pos, int c){
+editBlock_t *new_edit_block(char *type, unsigned int pos, int c){
     if(c<0)
         return NULL;
-    editblock_t *new = malloc(sizeof(editblock_t));
+    editBlock_t *new = malloc(sizeof(editBlock_t));
     new->c=c;
     strcpy(new->type,type);
     new->pos=pos;
     return new;
 }
 
-editblock_t ** createsequence(unsigned int size){
-    editblock_t **sequence=malloc(sizeof(editblock_t*)*size);
-    move_end();
+editBlock_t ** create_edit_sequence(sequenceTable_t *sequenceTable, unsigned int size){
+    editBlock_t **sequence=malloc(sizeof(editBlock_t*)*size);
+
+    sequenceTable->posx = file_to->size;
+    sequenceTable->posy = file_from->size;
+    end(file_to);
+    unsigned char editChar=prev(file_to);
+
     unsigned int seq_pos=size-1;
-    unsigned int pos=table->posx;
-    while(table->posy>-1||table->posx>-1){
-        int result = choose_next();
+    unsigned int pos=sequenceTable->posx-1;
+    while(sequenceTable->posy>-1||sequenceTable->posx>-1){
+        int result = decode_current(sequenceTable);
         switch (result){
             case DEL:
-                sequence[seq_pos--]=new_editblock("DEL",pos+1,'\0');
-                move_up();
+                sequence[seq_pos--]= new_edit_block("DEL", pos + 1, '\0');
+
+                //move up
+                sequenceTable->cur=sequenceTable->cur->upper;
+                sequenceTable->posy--;
+
                 break;
             case ADD:
-                sequence[seq_pos--]=new_editblock("ADD",pos,table->up);
-                move_left();
+                sequence[seq_pos--]= new_edit_block("ADD", pos, editChar);
+
+                //move left
+                sequenceTable->posx--;
+                editChar=prev(file_to);
+
                 pos--;
                 break;
             case SET:
-                sequence[seq_pos--]=new_editblock("SET",pos,table->up);
+                sequence[seq_pos--]= new_edit_block("SET", pos, editChar);
             case NONE:
-                move_left();
-                move_up();
+                //move left
+                sequenceTable->posx--;
+                editChar=prev(file_to);
+                //move up
+                sequenceTable->cur=sequenceTable->cur->upper;
+                sequenceTable->posy--;
+
                 pos--;
             default:
                 break;
@@ -228,9 +170,9 @@ editblock_t ** createsequence(unsigned int size){
     return sequence;
 }
 
-void ordersequence(editblock_t ** seq, unsigned int size){
+void order_edit_sequence(editBlock_t ** seq, unsigned int size){
     for(int i=1;i<size;i++){
-        editblock_t *temp = seq[i];
+        editBlock_t *temp = seq[i];
         int j=i-1;
         while(j>=0 && seq[j]->pos>temp->pos){
             seq[j+1]=seq[j];
@@ -240,38 +182,75 @@ void ordersequence(editblock_t ** seq, unsigned int size){
     }
 }
 
-void savesequence(const char *from, const char *to, const char *out){
-    file_to = create_file(to);
+void edit_block_to_buffer(editBlock_t *block, unsigned char *buffer){
+    strcpy((char *)buffer,block->type);
+    for(unsigned char i=0;i<4;i++)
+        buffer[i+3]= (block->pos>>(3-i)*8u) & 0xffu;
+    buffer[7]=block->c;
+}
+
+void save_sequence(const char *from, const char *to, const char *out){
     file_from = create_file_volatile(from);
-    if(!file_to) {
+    file_to = create_file(to);
+    if(file_to == NULL){
         perror(to);
         return;
     }
-    if(!file_from) {
+    if(file_from == NULL){
         perror(from);
         return;
     }
-    if(completetable()==RMS){
-        perror(from);
-        return;
+
+    sequenceTable_t *sequenceTable=create_sequence_table();
+
+    use_files(file_from,file_to);
+    distanceTable_t *distanceTable = create_table(file_to->size);
+
+    complete_sequence_table(sequenceTable, distanceTable);
+
+    /*while(sequenceTable->cur) {
+        for (sequenceTable->posx = 0; sequenceTable->posx < distanceTable->sizeX; sequenceTable->posx++) {
+            char toPrint = 0;
+            switch (decode_current(sequenceTable)) {
+                case 0:
+                    toPrint = 'A';
+                    break;
+                case 1:
+                    toPrint = 'D';
+                    break;
+                case 2:
+                    toPrint = 'S';
+                    break;
+                case 3:
+                    toPrint = 'N';
+                    break;
+            }
+            printf("%4c", toPrint);
+        }
+        printf("\n");
+        sequenceTable->cur=sequenceTable->cur->upper;
+    }*/
+
+    long distance = get_distance(distanceTable);
+    editBlock_t **sequence = create_edit_sequence(sequenceTable, distance);
+    order_edit_sequence(sequence, distance);
+
+    int outputFd = creat(out,0644);
+    unsigned char outputBuffer[8];
+    for(long i = 0; i< distance; i++){
+        //printf("%s  %d  %c\n",sequence[i]->type, sequence[i]->pos, sequence[i]->c);
+        edit_block_to_buffer(sequence[i],outputBuffer);
+        write(outputFd,outputBuffer,8);
+        free(sequence[i]);
     }
-    unsigned int distance = get_distance();
-    editblock_t **seq=createsequence(distance);
-    close_file(file_to);
-    destroy_table();
-    ordersequence(seq, distance);
-    int out_fd = creat(out,0644);
-    for (long i=0;i<distance;i++){
-        unsigned char *out_buff=add_seq_chunk(seq[i]);
-        write(out_fd,out_buff,8);
-        free(out_buff);
-        free(seq[i]);
-    }
-    free(seq);
+    free(sequence);
+
+    destroy_table(distanceTable);
+    destroy_sequence_table(sequenceTable);
 }
 
-editblock_t *create_editblock(const unsigned char *buf){
-    editblock_t *seqblock = malloc(sizeof(editblock_t));
+editBlock_t *create_editblock(const unsigned char *buf){
+    editBlock_t *seqblock = malloc(sizeof(editBlock_t));
     seqblock->pos=0;
     for (int i = 0; i < 3; i++) {
         seqblock->type[i] = (char) buf[i];
@@ -284,7 +263,7 @@ editblock_t *create_editblock(const unsigned char *buf){
     return seqblock;
 }
 
-editblock_t *next_editblock(int fd){
+editBlock_t *next_editblock(int fd){
     unsigned char buff[8];
     unsigned int n=read(fd,buff,8);
     if(n==8) return create_editblock(buff);
@@ -309,7 +288,7 @@ int seq_init(const char *in_file_path){
     return 0;
 }
 
-void apply_edit_block(editblock_t *edit){
+void apply_edit_block(editBlock_t *edit){
     if(strcmp(edit->type,"ADD")==0){
         seq_out[seq_pos++]=edit->c;
     }else if(strcmp(edit->type,"DEL")==0){
@@ -326,7 +305,7 @@ void write_seq_buffer(int out_fd){
     seq_pos=0;
 }
 
-int check_editblock(editblock_t *edit){
+int check_editblock(editBlock_t *edit){
     if(edit==NULL) return 0;
     if(strcmp(edit->type,"ADD")==0 ||
        strcmp(edit->type,"SET")==0 ||
@@ -353,7 +332,7 @@ void applysequence(const char *in_path, const char *seq_path, const char *out_pa
         perror(in_path);
         return;
     }
-    editblock_t *edit=next_editblock(seq_fd);
+    editBlock_t *edit=next_editblock(seq_fd);
     if(check_editblock(edit)!=0){
         printf("%s is not a valid edit sequence file or it is corrupted.\n",seq_path);
         return;
@@ -379,156 +358,4 @@ void applysequence(const char *in_path, const char *seq_path, const char *out_pa
         write(out_fd, seq_out, seq_pos);
     }
     close_file(seq_in_file);
-}
-
-char search_interrupt=0;
-
-long filedistance(const char *path_file1, const char *path_file2){
-    file_to = create_file(path_file1);
-    file_from = create_file_volatile(path_file2);
-    if(!file_from){
-        search_interrupt=1;
-        perror(path_file2);
-        return -1;
-    }
-    if(!file_to){
-        perror(path_file1);
-        return -1;
-    }
-    long distance = -1;
-    if(completetable()==RMS){
-        search_interrupt=1;
-        perror(path_file2);
-    }else{
-        distance=get_distance();
-    }
-    destroy_table();
-    close_file(file_from);
-    close_file(file_to);
-    return distance;
-}
-
-typedef struct Entry{
-    long distance;
-    char path[PATH_MAX];
-} entry_t;
-
-entry_t entries[ENTRY_MAX];
-const char *filepath;
-long entries_limit=0;
-int entries_size=0;
-
-void clear_entries(){
-    for(int i=0;i<ENTRY_MAX;i++)
-        entries[i].distance=-1;
-    entries_size=0;
-}
-
-int add_entry(long distance, const char path[]){
-    entries[entries_size].distance=distance;
-    strcpy(entries[entries_size].path, path);
-    entries_size++;
-    if(entries_size>=ENTRY_MAX)
-        return 1;
-    return 0;
-}
-
-int find_min(const char *fpath, const struct stat *sb, int typeflag){
-    if(typeflag==FTW_F){
-        long distance=filedistance(fpath,filepath);
-        if(distance==-1){
-            if(search_interrupt)
-                return 2;
-            else return 0;
-        }
-        if(distance<entries_limit){
-            clear_entries();
-            entries_limit=distance;
-        }
-        if(distance==entries_limit){
-            return add_entry(distance,fpath);
-        }
-    }
-    return 0;
-}
-
-int is_dir(const char *path){
-    struct stat status;
-    stat(path,&status);
-    if(S_ISDIR(status.st_mode)!=0)
-        return 1;
-    else
-        return 0;
-}
-
-void searchmindistance(const char *file_path, const char *dir_path){
-    if(!is_dir(dir_path)){
-        printf("%s is not a directory\n",dir_path);
-        return;
-    }
-    clear_entries();
-    entries_limit=0xFFFFFFFF;
-    filepath=file_path;
-    char real_dir_path[PATH_MAX];
-    realpath(dir_path,real_dir_path);
-    int ret = ftw(real_dir_path,find_min,50);
-    if(ret==-1){
-        perror(dir_path);
-        return;
-    }
-    int i=0;
-    while(entries[i].distance!=-1 && i<ENTRY_MAX){
-        printf("%s:\t%ld\n",entries[i].path,entries[i].distance);
-        i++;
-    }
-    if(ret==1) printf("found more than %d files with the same minimum length but only the first %d are shown", ENTRY_MAX, ENTRY_MAX);
-}
-
-void order_entries(entry_t *pEntries){
-    int i=0;
-    while(i<ENTRY_MAX && pEntries[i].distance != -1){
-        entry_t temp = pEntries[i];
-        int j=i-1;
-        while(j>=0 && pEntries[j].distance > temp.distance){
-            pEntries[j + 1]=pEntries[j];
-            j--;
-        }
-        pEntries[j + 1]=temp;
-        i++;
-    }
-}
-
-int find_all(const char *fpath, const struct stat *sb, int typeflag){
-    if(typeflag==FTW_F){
-        long distance = filedistance(filepath,fpath);
-        if(distance!=-1 && distance<=entries_limit) {
-            return add_entry(distance,fpath);
-        } else if(search_interrupt)
-            return 2;
-    }
-    return 0;
-}
-
-void searchalldistance(const char *file_path, const char *dir_path, int limit){
-    if(!is_dir(dir_path)){
-        printf("%s is not a directory\n",dir_path);
-        return;
-    }
-    clear_entries();
-    filepath=file_path;
-    entries_limit=limit;
-    char real_dir_path[PATH_MAX];
-    realpath(dir_path,real_dir_path);
-    int ret = ftw(real_dir_path, find_all, 50);
-    if(ret==-1){
-        perror(dir_path);
-        return;
-    }
-    order_entries(entries);
-    int i=0;
-    while(entries[i].distance!=-1 && i<ENTRY_MAX){
-        printf("%-7ld\t%s\n",entries[i].distance,entries[i].path);
-        i++;
-    }
-    if(ret==1) printf("found more than %d files but only the first %d are shown", ENTRY_MAX,ENTRY_MAX);
 }
